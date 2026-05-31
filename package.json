@@ -1,0 +1,28 @@
+{
+  "name": "anthropic-metadata-user-id",
+  "version": "0.1.0",
+  "description": "pi extension that injects metadata.user_id into Anthropic Messages request bodies.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "anthropic",
+    "metadata",
+    "user-id"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "jiti": "^2.4.2"
+  }
+}
