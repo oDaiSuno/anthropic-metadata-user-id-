@@ -1,8 +1,16 @@
 # anthropic-metadata-user-id
 
-A pi extension that injects Anthropic Messages request-body `metadata.user_id` for every selected `anthropic-messages` model.
+A pi extension that adapts every selected `anthropic-messages` model request to look like Claude Code traffic while preserving pi's normal tool execution.
 
-The injected `user_id` is a JSON string because the upstream service parses it server-side:
+It currently does five things:
+
+1. Injects Anthropic request-body `metadata.user_id` as a JSON string.
+2. Registers Claude Code-style request headers for the active Anthropic provider.
+3. Rewrites outgoing tool names to Claude Code-style names.
+4. Restores rewritten tool-call names during streaming and in the final assistant message before pi renders or dispatches tools.
+5. Forces Claude Code-style adaptive thinking fields in the outgoing request body.
+
+The injected `metadata.user_id` is a JSON string because the upstream service parses it server-side:
 
 ```json
 {
@@ -11,6 +19,122 @@ The injected `user_id` is a JSON string because the upstream service parses it s
   "session_id": "<current pi session id>"
 }
 ```
+
+## Claude Code headers
+
+For `anthropic-messages` models, the extension registers these provider headers:
+
+```text
+user-agent: claude-cli/<latest @anthropic-ai/claude-code version> (external, cli)
+X-Claude-Code-Session-Id: <current pi session id>
+```
+
+Header names are case-insensitive; the extension writes `user-agent` in lowercase so it reliably overrides pi's built-in Anthropic OAuth header key.
+
+The Claude Code version is resolved on extension load from:
+
+```text
+https://registry.npmjs.org/@anthropic-ai%2Fclaude-code/latest
+```
+
+If npm is unavailable or the request times out, it falls back to the bundled version `2.1.170`.
+
+For tests or pinned deployments, override it with:
+
+```bash
+PI_CLAUDE_CODE_VERSION=2.1.170
+```
+
+The fetch timeout defaults to 1500 ms and can be adjusted with:
+
+```bash
+PI_CLAUDE_CODE_VERSION_FETCH_TIMEOUT_MS=3000
+```
+
+## Tool-name adaptation
+
+Outgoing Anthropic request payloads are rewritten with two rules:
+
+```text
+# pi native tools
+read              -> Read
+bash              -> Bash
+edit              -> Edit
+write             -> Write
+grep              -> Grep
+find              -> Find
+ls                -> Ls
+
+# extension / MCP-like tools
+ask_user_question -> mcp__ask_user_question
+init_experiment   -> mcp__init_experiment
+```
+
+The pi native tool set is exactly:
+
+```text
+read, bash, edit, write, grep, find, ls
+```
+
+The extension rewrites:
+
+- `tools[].name`
+- `tool_choice.name`
+- historical Anthropic `messages[].content[]` blocks with `type: "tool_use"`
+
+When the model responds with rewritten tool calls, the extension rewrites them back during `message_update` before pi creates TUI tool-rendering components, and again during `message_end` before pi dispatches tools:
+
+```text
+Read                    -> read
+mcp__ask_user_question  -> ask_user_question
+mcp__init_experiment    -> init_experiment
+```
+
+This keeps upstream Claude Code-style traffic while ensuring pi still executes the original pi tool names.
+
+## Thinking adaptation
+
+For every `anthropic-messages` request, the extension replaces pi's default thinking payload:
+
+```json
+{
+  "thinking": {
+    "type": "enabled",
+    "budget_tokens": 16384,
+    "display": "summarized"
+  }
+}
+```
+
+with a dynamic effort derived from the user's currently selected pi thinking level:
+
+```json
+{
+  "thinking": {
+    "type": "adaptive"
+  },
+  "output_config": {
+    "effort": "<selected effort>"
+  }
+}
+```
+
+The mapping is:
+
+```text
+off     -> low
+minimal -> low
+low     -> low
+medium  -> medium
+high    -> high
+xhigh   -> xhigh
+```
+
+## Provider auth preservation
+
+pi's runtime `registerProvider({ headers })` replaces the provider request config rather than merging it. To avoid breaking custom providers such as `guda-anthropic`, this extension reads the current provider request config and re-registers headers together with the existing `apiKey` and `authHeader` values.
+
+Only models with `api === "anthropic-messages"` are affected. Other providers are skipped.
 
 ## Install from GitHub
 
@@ -66,4 +190,4 @@ Set `PI_METADATA_ACCOUNT_UUID` if you want a non-empty `account_uuid`. If unset,
 npm test
 ```
 
-The test loads the TypeScript extension through `jiti`, verifies random `device_id` creation, checks `metadata.user_id` injection, preserves existing metadata, and skips non-`anthropic-messages` models.
+The test loads the TypeScript extension through `jiti`, verifies random `device_id` creation, checks `metadata.user_id` injection, verifies Claude Code headers and auth preservation, checks bidirectional tool-name mapping, and skips non-`anthropic-messages` models.

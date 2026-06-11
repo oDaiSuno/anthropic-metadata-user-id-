@@ -1,13 +1,14 @@
 {
   "name": "anthropic-metadata-user-id",
-  "version": "0.1.0",
-  "description": "pi extension that injects metadata.user_id into Anthropic Messages request bodies.",
+  "version": "0.3.2",
+  "description": "pi extension that adapts Anthropic Messages requests to Claude Code-style metadata, headers, and tool names.",
   "type": "module",
   "license": "MIT",
   "keywords": [
     "pi-package",
     "pi-extension",
     "anthropic",
+    "claude-code",
     "metadata",
     "user-id"
   ],
