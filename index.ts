@@ -179,8 +179,11 @@ function restoreToolName(name: string): string {
 	const exact = toolNameMap.get(name);
 	if (exact) return exact;
 	if (name.startsWith(MCP_TOOL_PREFIX)) return name.slice(MCP_TOOL_PREFIX.length);
-	if (name.length === 0) return name;
-	return `${name[0].toLowerCase()}${name.slice(1)}`;
+
+	const nativeName = name.toLowerCase();
+	if (PI_NATIVE_TOOL_NAMES.has(nativeName)) return nativeName;
+
+	return name;
 }
 
 function rewriteRecordName(
@@ -378,15 +381,11 @@ export default async function (pi: ExtensionAPI) {
 		};
 	});
 
-	pi.on("message_update", (event, ctx) => {
-		if (ctx.model?.api !== "anthropic-messages") return;
-
+	pi.on("message_update", (event, _ctx) => {
 		restoreAgentMessageToolCallNamesInPlace(event.message);
 	});
 
-	pi.on("message_end", (event, ctx) => {
-		if (ctx.model?.api !== "anthropic-messages") return;
-
+	pi.on("message_end", (event, _ctx) => {
 		const message = restoreAgentMessageToolCallNames(event.message);
 		return message ? { message: message as typeof event.message } : undefined;
 	});

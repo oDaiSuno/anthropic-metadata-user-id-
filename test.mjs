@@ -214,6 +214,57 @@ try {
 	assert.equal(streamingMessage.content[3].name, "edit");
 	assert.equal(streamingMessage.content[4].name, "init_experiment");
 
+	const streamingMessageWithOwnApi = {
+		role: "assistant",
+		api: "anthropic-messages",
+		provider: "guda-anthropic",
+		model: "glm-5.2",
+		content: [{ type: "toolCall", id: "call_api_1", name: "Bash", arguments: { command: "echo hi" } }],
+		stopReason: "tool_use",
+	};
+	await messageUpdate(
+		{ type: "message_update", message: streamingMessageWithOwnApi, assistantMessageEvent: { type: "toolcall_start" } },
+		{ ...ctx, model: openaiModel },
+	);
+	assert.equal(streamingMessageWithOwnApi.content[0].name, "bash");
+
+	const streamingMessageWithThrowingCtxModel = {
+		role: "assistant",
+		api: "anthropic-messages",
+		provider: "guda-anthropic",
+		model: "glm-5.2",
+		content: [{ type: "toolCall", id: "call_api_2", name: "Read", arguments: { path: "a" } }],
+		stopReason: "tool_use",
+	};
+	await messageUpdate(
+		{ type: "message_update", message: streamingMessageWithThrowingCtxModel, assistantMessageEvent: { type: "toolcall_start" } },
+		{
+			...ctx,
+			get model() {
+				throw new Error("stale model context");
+			},
+		},
+	);
+	assert.equal(streamingMessageWithThrowingCtxModel.content[0].name, "read");
+
+	const nonAnthropicStreamingMessage = {
+		role: "assistant",
+		api: "openai-responses",
+		provider: "guda-responses",
+		model: "gpt-5.5",
+		content: [
+			{ type: "toolCall", id: "call_openai_1", name: "Read", arguments: { path: "a" } },
+			{ type: "toolCall", id: "call_openai_2", name: "CustomTool", arguments: {} },
+		],
+		stopReason: "tool_use",
+	};
+	await messageUpdate(
+		{ type: "message_update", message: nonAnthropicStreamingMessage, assistantMessageEvent: { type: "toolcall_start" } },
+		ctx,
+	);
+	assert.equal(nonAnthropicStreamingMessage.content[0].name, "read");
+	assert.equal(nonAnthropicStreamingMessage.content[1].name, "CustomTool");
+
 	const restored = await messageEnd(
 		{
 			type: "message_end",
@@ -235,6 +286,42 @@ try {
 	assert.equal(restored.message.content[2].name, "ask_user_question");
 	assert.equal(restored.message.content[3].name, "edit");
 	assert.equal(restored.message.content[4].name, "init_experiment");
+
+	const restoredFromMessageApi = await messageEnd(
+		{
+			type: "message_end",
+			message: {
+				role: "assistant",
+				api: "anthropic-messages",
+				provider: "guda-anthropic",
+				model: "glm-5.2",
+				content: [{ type: "toolCall", id: "call_api_3", name: "Bash", arguments: { command: "echo hi" } }],
+				stopReason: "tool_use",
+			},
+		},
+		{ ...ctx, model: openaiModel },
+	);
+	assert.equal(restoredFromMessageApi.message.content[0].name, "bash");
+
+	const restoredNonAnthropicNativeName = await messageEnd(
+		{
+			type: "message_end",
+			message: {
+				role: "assistant",
+				api: "openai-responses",
+				provider: "guda-responses",
+				model: "gpt-5.5",
+				content: [
+					{ type: "toolCall", id: "call_openai_3", name: "Read", arguments: { path: "a" } },
+					{ type: "toolCall", id: "call_openai_4", name: "CustomTool", arguments: {} },
+				],
+				stopReason: "tool_use",
+			},
+		},
+		ctx,
+	);
+	assert.equal(restoredNonAnthropicNativeName.message.content[0].name, "read");
+	assert.equal(restoredNonAnthropicNativeName.message.content[1].name, "CustomTool");
 
 	const skipped = await beforeProviderRequest(
 		{ type: "before_provider_request", payload: { model: "gpt-test", metadata: {} } },
