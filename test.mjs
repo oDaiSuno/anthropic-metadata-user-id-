@@ -61,6 +61,18 @@ try {
 				},
 			},
 		],
+		// A provider with an apiKey but NO authHeader: the extension must still
+		// force `authHeader: true` so pi adds `Authorization: Bearer <apiKey>`.
+		[
+			"bare-anthropic",
+			{ apiKey: "$BARE_KEY", headers: {} },
+		],
+		// A provider with NO apiKey: must NOT get a forced authHeader (would make
+		// pi throw `No API key found`).
+		[
+			"keyless-anthropic",
+			{ headers: { "X-Custom": "yes" } },
+		],
 	]);
 
 	await mod.default({
@@ -109,6 +121,7 @@ try {
 	await sessionStart({ type: "session_start", reason: "startup" }, ctx);
 	assert.equal(registrations.length, 1);
 	assert.equal(registrations[0].name, "guda-anthropic");
+	// guda already had authHeader: true -> preserved as true.
 	assert.equal(registrations[0].config.apiKey, "$GUDA_KEY");
 	assert.equal(registrations[0].config.authHeader, true);
 	assert.equal(registrations[0].config.headers["x-existing"], "1");
@@ -130,6 +143,34 @@ try {
 		{ ...ctx, model: openaiModel },
 	);
 	assert.equal(registrations.length, beforeNonAnthropicRegistrations);
+
+	// Switch to an anthropic-messages provider that has an apiKey but NO
+	// authHeader configured. The extension must force authHeader: true so pi
+	// appends `Authorization: Bearer <apiKey>`, while keeping x-api-key.
+	const bareAnthropicModel = { api: "anthropic-messages", provider: "bare-anthropic", id: "claude-bare" };
+	await modelSelect(
+		{ type: "model_select", model: bareAnthropicModel, previousModel: anthropicModel, source: "set" },
+		{ ...ctx, model: bareAnthropicModel },
+	);
+	const bareReg = registrations.at(-1);
+	assert.equal(bareReg.name, "bare-anthropic");
+	assert.equal(bareReg.config.apiKey, "$BARE_KEY");
+	assert.equal(bareReg.config.authHeader, true, "authHeader must be forced true when apiKey is present");
+
+	// Switch to an anthropic-messages provider with NO apiKey: must NOT inherit
+	// a forced authHeader (otherwise pi would throw `No API key found`).
+	const keylessAnthropicModel = { api: "anthropic-messages", provider: "keyless-anthropic", id: "claude-bare" };
+	await modelSelect(
+		{ type: "model_select", model: keylessAnthropicModel, previousModel: bareAnthropicModel, source: "set" },
+		{ ...ctx, model: keylessAnthropicModel },
+	);
+	const keylessReg = registrations.at(-1);
+	assert.equal(keylessReg.name, "keyless-anthropic");
+	assert.equal(keylessReg.config.apiKey, undefined);
+	assert.equal("authHeader" in keylessReg.config, false, "keyless provider must not get forced authHeader");
+
+	// Reset ctx model back to the anthropic one before payload assertions.
+	ctx.model = anthropicModel;
 
 	const output = await beforeProviderRequest(
 		{

@@ -2,13 +2,14 @@
 
 A pi extension that adapts every selected `anthropic-messages` model request to look like Claude Code traffic while preserving pi's normal tool execution.
 
-It currently does five things:
+It currently does six things:
 
 1. Injects Anthropic request-body `metadata.user_id` as a JSON string.
 2. Registers Claude Code-style request headers for the active Anthropic provider.
-3. Rewrites outgoing tool names to Claude Code-style names.
-4. Restores rewritten tool-call names during streaming and in the final assistant message before pi renders or dispatches tools.
-5. Forces Claude Code-style adaptive thinking fields in the outgoing request body.
+3. Forces an `Authorization: Bearer <apiKey>` header for every `anthropic-messages` provider it manages (see [Bearer auth header](#bearer-auth-header)).
+4. Rewrites outgoing tool names to Claude Code-style names.
+5. Restores rewritten tool-call names during streaming and in the final assistant message before pi renders or dispatches tools.
+6. Forces Claude Code-style adaptive thinking fields in the outgoing request body.
 
 The injected `metadata.user_id` is a JSON string because the upstream service parses it server-side:
 
@@ -50,6 +51,20 @@ The fetch timeout defaults to 1500 ms and can be adjusted with:
 ```bash
 PI_CLAUDE_CODE_VERSION_FETCH_TIMEOUT_MS=3000
 ```
+
+## Bearer auth header
+
+For every `anthropic-messages` provider this extension manages that has a resolvable API key, the extension sets `authHeader: true` when re-registering the provider. pi's model registry turns that into an outgoing request header:
+
+```text
+Authorization: Bearer <resolved apiKey>
+```
+
+This is **additive**: pi still passes the same API key to the Anthropic SDK, which continues to send `x-api-key: <key>`. Both headers travel together, so the request keeps `x-api-key` authentication while also presenting a `Bearer` token — useful for Anthropic-compatible proxies that authenticate via `Authorization: Bearer`.
+
+The bearer header is forced for *all* `anthropic-messages` providers the extension touches when an API key is available. When no API key can be resolved (for example, a provider relying on header-only auth), the extension does not force `authHeader`, so pi does not raise `No API key found`.
+
+The value used is the provider's resolved API key, obtained through the same `apiKey`/`authHeader`/`headers` preservation mechanism described under [Provider auth preservation](#provider-auth-preservation).
 
 ## Tool-name adaptation
 
@@ -132,7 +147,7 @@ xhigh   -> xhigh
 
 ## Provider auth preservation
 
-pi's runtime `registerProvider({ headers })` replaces the provider request config rather than merging it. To avoid breaking custom providers such as `guda-anthropic`, this extension reads the current provider request config and re-registers headers together with the existing `apiKey` and `authHeader` values.
+pi's runtime `registerProvider({ headers })` replaces the provider request config rather than merging it. To avoid breaking custom providers such as `guda-anthropic`, this extension reads the current provider request config and re-registers headers together with the existing `apiKey` and `authHeader` values. In addition, when an API key is resolvable the extension forces `authHeader: true` so pi adds the [`Authorization: Bearer`](#bearer-auth-header) header (see above).
 
 Only models with `api === "anthropic-messages"` are affected. Other providers are skipped.
 
@@ -190,4 +205,4 @@ Set `PI_METADATA_ACCOUNT_UUID` if you want a non-empty `account_uuid`. If unset,
 npm test
 ```
 
-The test loads the TypeScript extension through `jiti`, verifies random `device_id` creation, checks `metadata.user_id` injection, verifies Claude Code headers and auth preservation, checks bidirectional tool-name mapping, and skips non-`anthropic-messages` models.
+The test loads the TypeScript extension through `jiti`, verifies random `device_id` creation, checks `metadata.user_id` injection, verifies Claude Code headers, auth preservation, and forced `Authorization: Bearer` header registration, checks bidirectional tool-name mapping, and skips non-`anthropic-messages` models.

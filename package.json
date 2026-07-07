@@ -1,6 +1,6 @@
 {
   "name": "anthropic-metadata-user-id",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "pi extension that adapts Anthropic Messages requests to Claude Code-style metadata, headers, and tool names.",
   "type": "module",
   "license": "MIT",

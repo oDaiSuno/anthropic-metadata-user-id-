@@ -332,13 +332,20 @@ async function syncClaudeCodeHeaders(
 	const sessionId = ctx.sessionManager.getSessionId();
 	const existing = await resolveProviderRequestConfig(ctx, provider);
 	const headers = buildClaudeCodeHeaders(existing.headers, userAgent, sessionId);
-	const cacheKey = JSON.stringify({ apiKey: existing.apiKey, authHeader: existing.authHeader, headers });
+	// Force a `Authorization: Bearer <apiKey>` header for every anthropic-messages
+	// provider this extension manages, as long as an API key is resolvable.
+	// pi's ModelRegistry.getApiKeyAndHeaders turns `authHeader: true` into the
+	// header value `Bearer <resolved apiKey>` and still passes the key to the
+	// Anthropic SDK (keeping `x-api-key`), so the bearer header is additive.
+	const forceBearer = existing.apiKey !== undefined;
+	const authHeader = forceBearer ? true : existing.authHeader;
+	const cacheKey = JSON.stringify({ apiKey: existing.apiKey, authHeader, headers });
 
 	if (registeredHeaderState.get(provider) === cacheKey) return;
 
 	const config: ProviderRequestConfig = { headers };
 	if (existing.apiKey !== undefined) config.apiKey = existing.apiKey;
-	if (existing.authHeader !== undefined) config.authHeader = existing.authHeader;
+	if (authHeader !== undefined) config.authHeader = authHeader;
 
 	pi.registerProvider(provider, config);
 	registeredHeaderState.set(provider, cacheKey);
